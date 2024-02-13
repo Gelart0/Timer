@@ -1,0 +1,141 @@
+#include <Wire.h>
+#include <Adafruit_LEDBackpack.h>
+#include <Adafruit_GFX.h>
+#include <Keypad.h>
+
+const int ROWS = 4;
+const int COLS = 4;
+
+char keys[ROWS][COLS] = {
+  {'1', '2', '3', 'A'},
+  {'4', '5', '6', 'B'},
+  {'7', '8', '9', 'C'},
+  {'*', '0', '#', 'D'}
+};
+
+byte rowPins[ROWS] = {9, 8, 7, 6}; // přiřaďte pinům pro řádky
+byte colPins[COLS] = {5, 4, 3, 2}; // přiřaďte pinům pro sloupce
+
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
+
+Adafruit_7segment matrix = Adafruit_7segment(); // Adresa nového zobrazovače je 0x70
+
+unsigned long previousMillis = 0;
+const long interval = 1000; // interval mezi aktualizacemi času (v milisekundách)
+const long resetBlinkInterval = 2000; // délka blikání LED proužku po resetu časovače
+
+int minutes = 0;
+int seconds = 0;
+bool timerStarted = false;
+bool timerFinished = false;
+bool timerReset = false;
+
+void setup() {
+  matrix.begin(0x70); // Inicializace sedmisegmentového displeje na adrese 112
+  matrix.setBrightness(10); // Nastavení jasu displeje
+
+  Serial.begin(9600);
+}
+
+void loop() {
+  char key = keypad.getKey();
+  if (key >= '0' && key <= '9') {
+    setTime(key - '0');
+  }
+
+  if (key == '#') {
+    if (minutes >= 1 && minutes <= 99) {
+      startTimer();
+    }
+  }
+
+  if (key == '*') {
+    resetTimer();
+  }
+
+  unsigned long currentMillis = millis();
+  if (timerStarted && !timerFinished && currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    updateTimer();
+  }
+
+  if (timerFinished) {
+    if (currentMillis - previousMillis < resetBlinkInterval) {
+      if ((currentMillis / 1000) % 2 == 0) {
+        matrix.setBrightness(15); // Zvýšení jasu displeje
+      } else {
+        matrix.setBrightness(0); // Vypnutí displeje
+      }
+    } else {
+      timerFinished = false;
+      timerStarted = false;
+      matrix.setBrightness(10); // Nastavení jasu displeje na původní hodnotu
+    }
+  }
+
+  if (timerReset) {
+    if (currentMillis - previousMillis < resetBlinkInterval) {
+      if ((currentMillis / 1000) % 2 == 0) {
+        matrix.writeDigitNum(0, 0); // Nastavení první číslice pro minuty na 0
+        matrix.writeDigitNum(1, 0); // Nastavení druhé číslice pro minuty na 0
+        matrix.writeDigitNum(3, 0); // Nastavení první číslice pro sekundy na 0
+        matrix.writeDigitNum(4, 0); // Nastavení druhé číslice pro sekundy na 0
+        matrix.writeDisplay();
+      } else {
+        matrix.clear();
+        matrix.writeDisplay();
+      }
+    } else {
+      timerReset = false;
+    }
+  }
+}
+
+void startTimer() {
+  timerStarted = true;
+}
+
+void resetTimer() {
+  timerStarted = false;
+  timerFinished = false;
+  timerReset = true;
+  minutes = 0;
+  seconds = 0;
+  updateDisplay();
+}
+
+void setTime(int digit) {
+  if (digit >= 0 && digit <= 9) {
+    if (minutes == 0 && digit == 0) {
+      return; // Pokud jsme na začátku zadávání a zadáme 0, ignorujeme
+    }
+    if (minutes < 10) {
+      minutes = minutes * 10 + digit;
+    } else {
+      seconds = digit;
+    }
+    updateDisplay();
+  }
+}
+
+void updateTimer() {
+  if (minutes > 0 || seconds > 0) {
+    if (seconds == 0) {
+      minutes--;
+      seconds = 59;
+    } else {
+      seconds--;
+    }
+    updateDisplay();
+  } else {
+    timerFinished = true;
+  }
+}
+
+void updateDisplay() {
+  matrix.writeDigitNum(0, minutes / 10); // první číslice pro minuty
+  matrix.writeDigitNum(1, minutes % 10); // druhá číslice pro minuty
+  matrix.writeDigitNum(3, seconds / 10); // první číslice pro sekundy
+  matrix.writeDigitNum(4, seconds % 10); // druhá číslice pro sekundy
+  matrix.writeDisplay();
+}
